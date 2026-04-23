@@ -814,7 +814,7 @@ function switchChat(id) {
   if (chat.messages.length && chat.model) {
     ms.style.display = 'none';
     ml.style.display = 'inline';
-    ml.textContent = chat.model;
+    ml.textContent = labelForModel(chat.model);
   } else {
     ms.style.display = '';
     ml.style.display = 'none';
@@ -910,6 +910,12 @@ function addCopy(codeEl) {
 }
 function esc(s) {
   const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML;
+}
+
+function labelForModel(model) {
+  const value = String(model || '');
+  if (value === IMAGE_MODEL || value === IMAGE_LABEL || value.includes('llama-4-scout')) return IMAGE_LABEL;
+  return TEXT_LABEL;
 }
 
 // ── Model fetching ───────────────────────────────────────
@@ -1153,7 +1159,7 @@ async function sendMessage() {
   // Lock model
   const ms = document.getElementById('model-select');
   const ml = document.getElementById('model-locked');
-  ms.style.display = 'none'; ml.style.display = 'inline'; ml.textContent = hasImage ? IMAGE_LABEL : TEXT_LABEL;
+  ms.style.display = 'none'; ml.style.display = 'inline'; ml.textContent = labelForModel(model);
 
   // Build api messages
   // Build a single text prompt for the hosted PMCAI API while preserving chat history and prompts.
