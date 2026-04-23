@@ -634,7 +634,7 @@ body{
   <div class="brand">⚡ <span>PMCAI</span></div>
   <div class="top-divider"></div>
   <span class="top-label">Model</span>
-  <select id="model-select"><option>openai/gpt-oss-20b</option></select>
+  <select id="model-select"><option>20</option></select>
   <span id="model-locked"></span>
   <div class="top-divider"></div>
   <span class="top-label">Temp</span>
@@ -738,6 +738,8 @@ const CHAT_STORAGE_KEY = 'pmcai.chats';
 const SETTINGS_STORAGE_KEY = 'pmcai.settings';
 const TEXT_MODEL = 'openai/gpt-oss-20b';
 const IMAGE_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const TEXT_LABEL = '20';
+const IMAGE_LABEL = '17';
 const PMCAI_SYSTEM_NAME = TEXT_MODEL;
 
 // ── State ────────────────────────────────────────────────
@@ -1030,8 +1032,7 @@ function clearImage() {
 }
 function checkVisionWarn() {
   if (!attachImgB64) { document.getElementById('vision-warn').classList.remove('show'); return; }
-  const model = IMAGE_MODEL;
-  document.getElementById('warn-model').textContent = model || IMAGE_MODEL;
+  document.getElementById('warn-model').textContent = IMAGE_LABEL;
   document.getElementById('vision-warn').classList.add('show');
 }
 document.getElementById('model-select').addEventListener('change', checkVisionWarn);
@@ -1152,7 +1153,7 @@ async function sendMessage() {
   // Lock model
   const ms = document.getElementById('model-select');
   const ml = document.getElementById('model-locked');
-  ms.style.display = 'none'; ml.style.display = 'inline'; ml.textContent = model;
+  ms.style.display = 'none'; ml.style.display = 'inline'; ml.textContent = hasImage ? IMAGE_LABEL : TEXT_LABEL;
 
   // Build api messages
   // Build a single text prompt for the hosted PMCAI API while preserving chat history and prompts.
@@ -1241,7 +1242,7 @@ function stopGen() { if (abortCtrl) abortCtrl.abort(); }
   const topLabel = document.querySelector('#top-bar .top-label');
   if (topLabel) topLabel.textContent = 'System';
   const modelSelect = document.getElementById('model-select');
-  if (modelSelect) { modelSelect.innerHTML = `<option>${TEXT_MODEL}</option>`; modelSelect.disabled = true; }
+  if (modelSelect) { modelSelect.innerHTML = `<option>${TEXT_LABEL}</option>`; modelSelect.disabled = true; }
   const tempInput = document.getElementById('temp-input');
   if (tempInput) tempInput.value = '0.2';
   const sideRows = document.querySelectorAll('.sidebar-footer .status-row span');
