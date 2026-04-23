@@ -1120,6 +1120,8 @@ async function sendMessage() {
   if (!activeChatId || !getActive()) newChat();
   const chat  = getActive();
   const hasImage = !!attachImgB64;
+  const imageB64 = attachImgB64;
+  const imageMime = attachImgMime;
   const model = hasImage ? IMAGE_MODEL : TEXT_MODEL;
   const sys   = document.getElementById('sys-ta').value.trim();
 
@@ -1135,11 +1137,11 @@ async function sendMessage() {
   }
 
   const userMsg = { role:'user', content: finalText, displayContent: text };
-  if (attachImgB64) { userMsg.images=[attachImgB64]; userMsg._imgB64=attachImgB64; userMsg._imgMime=attachImgMime; }
+  if (imageB64) { userMsg.images=[imageB64]; userMsg._imgB64=imageB64; userMsg._imgMime=imageMime; }
   chat.messages.push(userMsg);
 
   // Show bubble with original text (not injected context)
-  const ub = appendBubble(text, 'user', attachImgB64, attachImgMime);
+  const ub = appendBubble(text, 'user', imageB64, imageMime);
   if (attachPdfText) {
     const badge = document.createElement('span');
     badge.style.cssText = 'display:block;font-size:11px;opacity:.5;margin-top:4px;';
@@ -1165,7 +1167,7 @@ async function sendMessage() {
   // Build a single text prompt for the hosted PMCAI API while preserving chat history and prompts.
   const historyLines = [];
   if (sys) historyLines.push('System: ' + sys);
-  historyLines.push('Model: ' + model);
+  historyLines.push('Model: ' + labelForModel(model));
   if (hasImage) historyLines.push('[Image attached in request body]');
   chat.messages.forEach(m => {
     const label = m.role === 'assistant' ? 'Assistant' : 'User';
@@ -1201,9 +1203,9 @@ async function sendMessage() {
   try {
     const payload = { message: apiPrompt, model };
     if (hasImage) {
-      payload.image = attachImgB64;
-      payload.imageMime = attachImgMime || 'image/png';
-      payload.images = [attachImgB64];
+      payload.image = imageB64;
+      payload.imageMime = imageMime || 'image/png';
+      payload.images = [imageB64];
     }
     const res = await fetch(CHAT_API, {
       method: 'POST',
