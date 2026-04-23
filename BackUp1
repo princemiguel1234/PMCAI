@@ -100,43 +100,9 @@ body{
   border-radius:6px;
   width:52px;
   text-align:center;
+  margin-right:auto;
 }
 #temp-input:focus{outline:none;border-color:var(--accent);}
-
-/* Hardware stats in header */
-#hw-bar{
-  margin-left:auto;
-  display:flex;
-  align-items:center;
-  gap:10px;
-  flex-shrink:0;
-}
-.hw-stat{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  font-size:11px;
-  color:var(--text-m);
-}
-.hw-stat-label{color:var(--text-d);font-weight:500;}
-.hw-mini-track{
-  width:44px;height:4px;
-  background:rgba(255,255,255,0.07);
-  border-radius:2px;overflow:hidden;
-}
-.hw-mini-bar{
-  height:100%;border-radius:2px;
-  transform:scaleX(0);
-  transform-origin:left;
-  transition:transform 0.6s ease;
-  will-change:transform;
-}
-.hw-mini-bar.cpu{background:var(--accent);}
-.hw-mini-bar.ram{background:#c084fc;}
-.hw-pct{font-weight:600;font-size:11px;color:var(--text-m);min-width:30px;}
-.hw-pct.warn{color:var(--orange);}
-.hw-pct.danger{color:var(--red);}
-#hw-offline{font-size:11px;color:var(--text-d);}
 
 #sys-prompt-btn{
   background:none;border:1px solid var(--border);
@@ -506,6 +472,156 @@ body{
 }
 
 /* ── Scrollbar global ──────────────────────────────────── */
+@media (max-width: 820px){
+  #top-bar{
+    height:auto;
+    min-height:44px;
+    padding:8px 10px;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+  }
+  #top-bar .brand{
+    min-width:0;
+  }
+  #top-bar .top-divider{
+    display:none;
+  }
+  #model-select{
+    max-width:none;
+    flex:1 1 150px;
+  }
+  #temp-input{
+    margin-right:0;
+    width:56px;
+  }
+  #sys-prompt-btn{
+    flex:1 1 100%;
+  }
+  #app{
+    flex-direction:column;
+  }
+  #sidebar{
+    width:100%;
+    min-width:0;
+    max-height:34vh;
+    border-right:none;
+    border-bottom:1px solid var(--border);
+  }
+  .sidebar-head{
+    padding:10px;
+  }
+  #chat-list{
+    padding:4px 6px;
+  }
+  .chat-item{
+    padding:10px;
+    font-size:14px;
+  }
+  .sidebar-footer{
+    padding:8px 10px;
+  }
+  #main{
+    min-height:0;
+  }
+  #sys-panel{
+    padding:10px 12px;
+  }
+  #sys-panel .sys-row{
+    flex-direction:column;
+  }
+  #sys-panel label{
+    padding-top:0;
+  }
+  #sys-actions{
+    padding-left:0;
+    flex-wrap:wrap;
+  }
+  #chat-box{
+    padding:16px 0;
+  }
+  .msg-wrap{
+    padding-left:12px;
+    padding-right:12px;
+  }
+  .bubble{
+    max-width:88%;
+  }
+  #input-zone{
+    padding:8px 12px 10px;
+  }
+  .input-row{
+    gap:6px;
+  }
+  #attach-btn,
+  #send-btn,
+  #stop-btn{
+    height:40px;
+  }
+  #msg-input{
+    min-height:40px;
+    max-height:120px;
+    font-size:13px;
+    padding:9px 12px;
+  }
+  #attach-btn{
+    padding:0 10px;
+  }
+  #send-btn,
+  #stop-btn{
+    padding:0 14px;
+  }
+}
+
+@media (max-width: 480px){
+  #top-bar{
+    padding:8px;
+    gap:6px;
+  }
+  #top-bar .brand{
+    font-size:13px;
+  }
+  #model-select,
+  #temp-input,
+  #sys-prompt-btn{
+    font-size:11px;
+  }
+  #sidebar{
+    max-height:28vh;
+  }
+  .welcome{
+    padding:24px 16px;
+  }
+  .welcome h2{
+    font-size:18px;
+  }
+  .bubble{
+    max-width:92%;
+    font-size:13px;
+  }
+  .msg-wrap{
+    padding-left:10px;
+    padding-right:10px;
+  }
+  #input-zone{
+    padding:8px 10px 10px;
+  }
+  .input-row{
+    flex-wrap:wrap;
+  }
+  #attach-btn{
+    flex:0 0 42px;
+  }
+  #msg-input{
+    flex:1 1 100%;
+    width:100%;
+  }
+  #send-btn,
+  #stop-btn{
+    flex:1 1 calc(50% - 3px);
+  }
+}
+
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
@@ -522,24 +638,9 @@ body{
   <span id="model-locked"></span>
   <div class="top-divider"></div>
   <span class="top-label">Temp</span>
-  <input type="number" id="temp-input" value="0.7" min="0" max="2" step="0.1">
+  <input type="number" id="temp-input" value="0.2" min="0.2" max="0.2" step="0.1" readonly>
   <div class="top-divider"></div>
   <button id="sys-prompt-btn" onclick="toggleSysPanel()">⚙ System Prompt<span id="sys-global-dot"></span></button>
-
-  <!-- Hardware stats -->
-  <div id="hw-bar">
-    <div class="hw-stat">
-      <span class="hw-stat-label">CPU</span>
-      <div class="hw-mini-track"><div class="hw-mini-bar cpu" id="cpu-bar"></div></div>
-      <span class="hw-pct" id="cpu-pct">--%</span>
-    </div>
-    <div class="hw-stat">
-      <span class="hw-stat-label">RAM</span>
-      <div class="hw-mini-track"><div class="hw-mini-bar ram" id="ram-bar"></div></div>
-      <span class="hw-pct" id="ram-pct">--%</span>
-    </div>
-    <span id="hw-offline" style="display:none"></span>
-  </div>
 </div>
 
 <!-- ── App body ─────────────────────────────────────────── -->
@@ -822,23 +923,6 @@ async function fetchModels() {
   sel.disabled = true;
   dot.className = 'online';
   txt.textContent = 'PMCAI API Online';
-}
-
-// ── Hardware stats ───────────────────────────────────────
-async function pollHW() {
-  document.getElementById('hw-offline').textContent = 'Cloud mode';
-  document.getElementById('hw-offline').style.display = 'inline';
-  setBar('cpu', 0);
-  setBar('ram', 0);
-}
-function setBar(type, pct) {
-  // Use transform:scaleX instead of width — GPU only, no layout
-  const bar = document.getElementById(`${type}-bar`);
-  const lbl = document.getElementById(`${type}-pct`);
-  if (!bar) return;
-  bar.style.transform = `scaleX(${Math.max(0,Math.min(100,pct))/100})`;
-  lbl.textContent = pct + '%';
-  lbl.className = 'hw-pct' + (pct>=90?' danger':pct>=70?' warn':'');
 }
 
 // ── Global system prompt ─────────────────────────────────
@@ -1133,6 +1217,8 @@ function stopGen() { if (abortCtrl) abortCtrl.abort(); }
   if (topLabel) topLabel.textContent = 'System';
   const modelSelect = document.getElementById('model-select');
   if (modelSelect) { modelSelect.innerHTML = '<option>PMCAI Cloud</option>'; modelSelect.disabled = true; }
+  const tempInput = document.getElementById('temp-input');
+  if (tempInput) tempInput.value = '0.2';
   const sideRows = document.querySelectorAll('.sidebar-footer .status-row span');
   if (sideRows[1]) sideRows[1].textContent = 'Chats auto-save in this browser';
   const loadText = document.getElementById('load-text');
@@ -1143,8 +1229,6 @@ function stopGen() { if (abortCtrl) abortCtrl.abort(); }
   await fetchModels();
   renderList();
   if (allChats.length) switchChat(allChats[0].id); else showWelcome();
-  pollHW();
-  setInterval(pollHW, 5000);
 })();
 </script>
 </body>
