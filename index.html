@@ -472,6 +472,156 @@ body{
 }
 
 /* ── Scrollbar global ──────────────────────────────────── */
+@media (max-width: 820px){
+  #top-bar{
+    height:auto;
+    min-height:44px;
+    padding:8px 10px;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+  }
+  #top-bar .brand{
+    min-width:0;
+  }
+  #top-bar .top-divider{
+    display:none;
+  }
+  #model-select{
+    max-width:none;
+    flex:1 1 150px;
+  }
+  #temp-input{
+    margin-right:0;
+    width:56px;
+  }
+  #sys-prompt-btn{
+    flex:1 1 100%;
+  }
+  #app{
+    flex-direction:column;
+  }
+  #sidebar{
+    width:100%;
+    min-width:0;
+    max-height:34vh;
+    border-right:none;
+    border-bottom:1px solid var(--border);
+  }
+  .sidebar-head{
+    padding:10px;
+  }
+  #chat-list{
+    padding:4px 6px;
+  }
+  .chat-item{
+    padding:10px;
+    font-size:14px;
+  }
+  .sidebar-footer{
+    padding:8px 10px;
+  }
+  #main{
+    min-height:0;
+  }
+  #sys-panel{
+    padding:10px 12px;
+  }
+  #sys-panel .sys-row{
+    flex-direction:column;
+  }
+  #sys-panel label{
+    padding-top:0;
+  }
+  #sys-actions{
+    padding-left:0;
+    flex-wrap:wrap;
+  }
+  #chat-box{
+    padding:16px 0;
+  }
+  .msg-wrap{
+    padding-left:12px;
+    padding-right:12px;
+  }
+  .bubble{
+    max-width:88%;
+  }
+  #input-zone{
+    padding:8px 12px 10px;
+  }
+  .input-row{
+    gap:6px;
+  }
+  #attach-btn,
+  #send-btn,
+  #stop-btn{
+    height:40px;
+  }
+  #msg-input{
+    min-height:40px;
+    max-height:120px;
+    font-size:13px;
+    padding:9px 12px;
+  }
+  #attach-btn{
+    padding:0 10px;
+  }
+  #send-btn,
+  #stop-btn{
+    padding:0 14px;
+  }
+}
+
+@media (max-width: 480px){
+  #top-bar{
+    padding:8px;
+    gap:6px;
+  }
+  #top-bar .brand{
+    font-size:13px;
+  }
+  #model-select,
+  #temp-input,
+  #sys-prompt-btn{
+    font-size:11px;
+  }
+  #sidebar{
+    max-height:28vh;
+  }
+  .welcome{
+    padding:24px 16px;
+  }
+  .welcome h2{
+    font-size:18px;
+  }
+  .bubble{
+    max-width:92%;
+    font-size:13px;
+  }
+  .msg-wrap{
+    padding-left:10px;
+    padding-right:10px;
+  }
+  #input-zone{
+    padding:8px 10px 10px;
+  }
+  .input-row{
+    flex-wrap:wrap;
+  }
+  #attach-btn{
+    flex:0 0 42px;
+  }
+  #msg-input{
+    flex:1 1 100%;
+    width:100%;
+  }
+  #send-btn,
+  #stop-btn{
+    flex:1 1 calc(50% - 3px);
+  }
+}
+
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
