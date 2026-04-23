@@ -634,7 +634,7 @@ body{
   <div class="brand">⚡ <span>PMCAI</span></div>
   <div class="top-divider"></div>
   <span class="top-label">Model</span>
-  <select id="model-select"><option>20</option></select>
+  <select id="model-select"><option>PMCAI Cloud</option></select>
   <span id="model-locked"></span>
   <div class="top-divider"></div>
   <span class="top-label">Temp</span>
@@ -716,13 +716,13 @@ body{
       <!-- Vision warning -->
       <div id="vision-warn">
         <span>⚠</span>
-        <span><strong id="warn-model"></strong> is used when an image is attached. The image is sent with the message.</span>
+        <span><strong id="warn-model"></strong> uses a text API endpoint. Image previews stay in chat, but only typed text and extracted PDF text are sent.</span>
       </div>
 
       <div class="input-row">
-        <button id="attach-btn" title="Attach image" onclick="document.getElementById('attach-file').click()">📎</button>
-        <input type="file" id="attach-file" accept="image/*" onchange="handleAttach(this.files[0])">
-        <textarea id="msg-input" rows="1" placeholder="Ask anything… attach one image if needed"></textarea>
+        <button id="attach-btn" title="Attach image or PDF" onclick="document.getElementById('attach-file').click()">📎</button>
+        <input type="file" id="attach-file" accept="image/*,.pdf,application/pdf" onchange="handleAttach(this.files[0])">
+        <textarea id="msg-input" rows="1" placeholder="Ask anything… drag & drop an image or PDF"></textarea>
         <button id="send-btn" onclick="sendMessage()">Send ➤</button>
         <button id="stop-btn" onclick="stopGen()">■ Stop</button>
       </div>
@@ -736,11 +736,7 @@ body{
 const CHAT_API = 'https://pmcai-backend.onrender.com/api/chat';
 const CHAT_STORAGE_KEY = 'pmcai.chats';
 const SETTINGS_STORAGE_KEY = 'pmcai.settings';
-const TEXT_MODEL = 'openai/gpt-oss-20b';
-const IMAGE_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
-const TEXT_LABEL = '20';
-const IMAGE_LABEL = '17';
-const PMCAI_SYSTEM_NAME = TEXT_MODEL;
+const PMCAI_SYSTEM_NAME = 'PMCAI Cloud';
 
 // ── State ────────────────────────────────────────────────
 let allChats      = [];
@@ -751,7 +747,6 @@ let saveTimer     = null;
 let resizeRaf     = null;
 let attachImgB64  = null;
 let attachImgMime = null;
-let attachImgSeq  = 0;
 let attachPdfText = null;
 let attachPdfName = null;
 let globalSystemPrompt = '';
@@ -776,7 +771,7 @@ function saveChats() {
 function newChat() {
   const id = Date.now().toString();
   // New chats inherit the global system prompt automatically
-  allChats.unshift({ id, title:'New Chat', model: TEXT_MODEL, systemPrompt: globalSystemPrompt, messages:[] });
+  allChats.unshift({ id, title:'New Chat', model: PMCAI_SYSTEM_NAME, systemPrompt: globalSystemPrompt, messages:[] });
   saveChats();
   renderList();
   switchChat(id);
@@ -814,7 +809,7 @@ function switchChat(id) {
   if (chat.messages.length && chat.model) {
     ms.style.display = 'none';
     ml.style.display = 'inline';
-    ml.textContent = labelForModel(chat.model);
+    ml.textContent = chat.model;
   } else {
     ms.style.display = '';
     ml.style.display = 'none';
@@ -912,19 +907,13 @@ function esc(s) {
   const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML;
 }
 
-function labelForModel(model) {
-  const value = String(model || '');
-  if (value === IMAGE_MODEL || value === IMAGE_LABEL || value.includes('llama-4-scout')) return IMAGE_LABEL;
-  return TEXT_LABEL;
-}
-
 // ── Model fetching ───────────────────────────────────────
 async function fetchModels() {
   const sel = document.getElementById('model-select');
   const dot = document.getElementById('status-dot');
   const txt = document.getElementById('status-text');
   const active = getActive();
-  const current = active?.model || TEXT_MODEL;
+  const current = active?.model || PMCAI_SYSTEM_NAME;
   sel.innerHTML = '';
   const o = document.createElement('option');
   o.value = current;
@@ -1004,12 +993,9 @@ function toggleSysPanel() {
 // ── Attach files ─────────────────────────────────────────
 
 function handleImg(file) {
-  clearImage();
   clearPdf();
-  const seq = ++attachImgSeq;
   const reader = new FileReader();
   reader.onload = e => {
-    if (seq !== attachImgSeq) return;
     const durl = e.target.result;
     attachImgB64 = durl.split(',')[1];
     attachImgMime = file.type;
@@ -1020,17 +1006,7 @@ function handleImg(file) {
   };
   reader.readAsDataURL(file);
 }
-function handleAttach(file) {
-  if (!file) return;
-  if (!file.type || !file.type.startsWith('image/')) {
-    clearImage();
-    clearPdf();
-    return;
-  }
-  handleImg(file);
-}
 function clearImage() {
-  attachImgSeq += 1;
   attachImgB64 = null; attachImgMime = null;
   document.getElementById('img-preview').classList.remove('show');
   document.getElementById('img-thumb').src = '';
@@ -1038,7 +1014,8 @@ function clearImage() {
 }
 function checkVisionWarn() {
   if (!attachImgB64) { document.getElementById('vision-warn').classList.remove('show'); return; }
-  document.getElementById('warn-model').textContent = IMAGE_LABEL;
+  const model = PMCAI_SYSTEM_NAME;
+  document.getElementById('warn-model').textContent = model || PMCAI_SYSTEM_NAME;
   document.getElementById('vision-warn').classList.add('show');
 }
 document.getElementById('model-select').addEventListener('change', checkVisionWarn);
@@ -1119,10 +1096,7 @@ async function sendMessage() {
 
   if (!activeChatId || !getActive()) newChat();
   const chat  = getActive();
-  const hasImage = !!attachImgB64;
-  const imageB64 = attachImgB64;
-  const imageMime = attachImgMime;
-  const model = hasImage ? IMAGE_MODEL : TEXT_MODEL;
+  const model = PMCAI_SYSTEM_NAME;
   const sys   = document.getElementById('sys-ta').value.trim();
 
   chat.model = model;
@@ -1137,11 +1111,11 @@ async function sendMessage() {
   }
 
   const userMsg = { role:'user', content: finalText, displayContent: text };
-  if (imageB64) { userMsg.images=[imageB64]; userMsg._imgB64=imageB64; userMsg._imgMime=imageMime; }
+  if (attachImgB64) { userMsg.images=[attachImgB64]; userMsg._imgB64=attachImgB64; userMsg._imgMime=attachImgMime; }
   chat.messages.push(userMsg);
 
   // Show bubble with original text (not injected context)
-  const ub = appendBubble(text, 'user', imageB64, imageMime);
+  const ub = appendBubble(text, 'user', attachImgB64, attachImgMime);
   if (attachPdfText) {
     const badge = document.createElement('span');
     badge.style.cssText = 'display:block;font-size:11px;opacity:.5;margin-top:4px;';
@@ -1161,18 +1135,16 @@ async function sendMessage() {
   // Lock model
   const ms = document.getElementById('model-select');
   const ml = document.getElementById('model-locked');
-  ms.style.display = 'none'; ml.style.display = 'inline'; ml.textContent = labelForModel(model);
+  ms.style.display = 'none'; ml.style.display = 'inline'; ml.textContent = model;
 
   // Build api messages
   // Build a single text prompt for the hosted PMCAI API while preserving chat history and prompts.
   const historyLines = [];
   if (sys) historyLines.push('System: ' + sys);
-  historyLines.push('Model: ' + labelForModel(model));
-  if (hasImage) historyLines.push('[Image attached in request body]');
   chat.messages.forEach(m => {
     const label = m.role === 'assistant' ? 'Assistant' : 'User';
     historyLines.push(label + ': ' + m.content);
-    if (m.images && m.images.length) historyLines.push('[Image attachment sent in request body]');
+    if (m.images && m.images.length) historyLines.push('[Image attachment previewed in UI but not sent to API]');
   });
   const apiPrompt = historyLines.join('\n\n');
 
@@ -1201,16 +1173,10 @@ async function sendMessage() {
   let fullResp = '';
 
   try {
-    const payload = { message: apiPrompt, model };
-    if (hasImage) {
-      payload.image = imageB64;
-      payload.imageMime = imageMime || 'image/png';
-      payload.images = [imageB64];
-    }
     const res = await fetch(CHAT_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ message: apiPrompt }),
       signal: abortCtrl.signal
     });
     if (!res.ok) throw new Error('PMCAI API error ' + res.status);
@@ -1250,7 +1216,7 @@ function stopGen() { if (abortCtrl) abortCtrl.abort(); }
   const topLabel = document.querySelector('#top-bar .top-label');
   if (topLabel) topLabel.textContent = 'System';
   const modelSelect = document.getElementById('model-select');
-  if (modelSelect) { modelSelect.innerHTML = `<option>${TEXT_LABEL}</option>`; modelSelect.disabled = true; }
+  if (modelSelect) { modelSelect.innerHTML = '<option>PMCAI Cloud</option>'; modelSelect.disabled = true; }
   const tempInput = document.getElementById('temp-input');
   if (tempInput) tempInput.value = '0.2';
   const sideRows = document.querySelectorAll('.sidebar-footer .status-row span');
