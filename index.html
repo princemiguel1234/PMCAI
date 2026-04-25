@@ -835,7 +835,9 @@ body.sidebar-collapsed #sidebar{
 <script>
 'use strict';
 // ── Config ──────────────────────────────────────────────
-const CHAT_API = 'https://pmcai-backend.onrender.com/api/chat';
+const API_BASE_URL = 'https://pmcai-backend.onrender.com';
+const CHAT_API = `${API_BASE_URL}/api/chat`;
+const API_STATUS_INTERVAL_MS = 15 * 60 * 1000;
 const CHAT_STORAGE_KEY = 'pmcai.chats';
 const SETTINGS_STORAGE_KEY = 'pmcai.settings';
 const PMCAI_SYSTEM_NAME = 'PMCAI Cloud';
@@ -855,6 +857,7 @@ let attachPdfText = null;
 let attachPdfName = null;
 let globalSystemPrompt = '';
 let cookieBannerVisible = false;
+let apiStatusTimer = null;
 
 // ── Persistence ──────────────────────────────────────────
 async function loadChats() {
@@ -944,7 +947,10 @@ function switchChat(id) {
     showWelcome();
   } else {
     chat.messages.forEach(m => {
-      appendBubble(m.displayContent || m.content, m.role === 'user' ? 'user' : 'ai', m._imgB64, m._imgMime);
+      const bubbleText = m.role === 'assistant'
+        ? (m.displayContent || sanitizeAssistantText(m.content))
+        : (m.displayContent || m.content);
+      appendBubble(bubbleText, m.role === 'user' ? 'user' : 'ai', m._imgB64, m._imgMime);
     });
   }
   // Lock model display if chat has messages
@@ -1027,8 +1033,15 @@ function renderMd(text) {
   if (typeof marked === 'undefined') return esc(text).replace(/\n/g,'<br>');
   return marked.parse(text, { breaks:true });
 }
+function sanitizeAssistantText(text) {
+  return (text || '')
+    .replace(/^\s*USE_WEB:\s*(true|false)\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 function finalizeMsg(el, text) {
-  el.innerHTML = renderMd(text);
+  const safeText = sanitizeAssistantText(text);
+  el.innerHTML = renderMd(safeText);
   if (typeof hljs !== 'undefined') el.querySelectorAll('pre code:not(.hljs)').forEach(b => { hljs.highlightElement(b); addCopy(b); });
   document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
 }
@@ -1054,8 +1067,6 @@ function esc(s) {
 // ── Model fetching ───────────────────────────────────────
 async function fetchModels() {
   const sel = document.getElementById('model-select');
-  const dot = document.getElementById('status-dot');
-  const txt = document.getElementById('status-text');
   const active = getActive();
   const current = active?.model || PMCAI_SYSTEM_NAME;
   sel.innerHTML = '';
@@ -1065,8 +1076,36 @@ async function fetchModels() {
   o.selected = true;
   sel.appendChild(o);
   sel.disabled = true;
-  dot.className = 'online';
-  txt.textContent = 'PMCAI API Online';
+}
+function setApiStatus(isOnline) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  if (!dot || !txt) return;
+  dot.classList.toggle('online', isOnline);
+  txt.textContent = isOnline ? 'PMCAI API Online' : 'PMCAI API Offline';
+}
+async function pingApiStatus() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  try {
+    await fetch(API_BASE_URL, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    setApiStatus(true);
+    return true;
+  } catch {
+    setApiStatus(false);
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+function startApiStatusPolling() {
+  if (apiStatusTimer) clearInterval(apiStatusTimer);
+  pingApiStatus();
+  apiStatusTimer = setInterval(pingApiStatus, API_STATUS_INTERVAL_MS);
 }
 
 // ── Global system prompt ─────────────────────────────────
@@ -1328,15 +1367,17 @@ async function sendMessage() {
     const data = await res.json();
     overlay.classList.remove('active');
     fullResp = typeof data.reply === 'string' ? data.reply : '';
-    if (!fullResp) throw new Error('Empty reply from PMCAI API');
+    const visibleResp = sanitizeAssistantText(fullResp);
+    if (!visibleResp) throw new Error('Empty reply from PMCAI API');
 
-    finalizeMsg(aiBub, fullResp);
-    chat.messages.push({ role:'assistant', content:fullResp });
+    finalizeMsg(aiBub, visibleResp);
+    chat.messages.push({ role:'assistant', content:visibleResp, displayContent:visibleResp });
     saveChats();
   } catch(err) {
     overlay.classList.remove('active');
     if (err.name === 'AbortError') {
-      if (fullResp) { finalizeMsg(aiBub, fullResp); chat.messages.push({ role:'assistant', content:fullResp }); saveChats(); }
+      const visibleResp = sanitizeAssistantText(fullResp);
+      if (visibleResp) { finalizeMsg(aiBub, visibleResp); chat.messages.push({ role:'assistant', content:visibleResp, displayContent:visibleResp }); saveChats(); }
       else aiBub.innerHTML = '<span style="color:var(--text-d);font-style:italic;">[Stopped]</span>';
     } else {
       aiBub.innerHTML = `<span style="color:var(--red);">⚠ ${esc(err.message)}</span>`;
@@ -1377,6 +1418,7 @@ if (sidebarToggleBtn) sidebarToggleBtn.addEventListener('click', () => {
   const loadText = document.getElementById('load-text');
   if (loadText) loadText.textContent = 'Connecting to PMCAI...';
   setupMarked();
+  startApiStatusPolling();
   await loadGlobalPrompt();
   await loadChats();
   await fetchModels();
