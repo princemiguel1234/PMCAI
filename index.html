@@ -53,6 +53,17 @@ body{
   font-size:14px;
   line-height:1.6;
 }
+body.cookie-banner-visible #main{
+  padding-bottom:96px;
+}
+body.sidebar-collapsed #sidebar{
+  width:0;
+  min-width:0;
+  transform:translateX(-100%);
+  opacity:0;
+  pointer-events:none;
+  border-right-width:0;
+}
 
 /* ── Top Header Bar ────────────────────────────────────── */
 #top-bar{
@@ -119,6 +130,27 @@ body{
   box-shadow:0 0 4px var(--accent);
 }
 
+#sidebar-toggle{
+  width:34px;
+  height:28px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:none;
+  border:1px solid var(--border);
+  color:var(--text);
+  border-radius:6px;
+  cursor:pointer;
+  font-size:18px;
+  line-height:1;
+  transition:background var(--trans), border-color var(--trans), color var(--trans), transform var(--trans);
+}
+#sidebar-toggle:hover{
+  background:var(--bg-hover);
+  border-color:var(--accent);
+  color:var(--accent-hi);
+}
+
 /* ── App layout ────────────────────────────────────────── */
 #app{
   display:flex;
@@ -133,6 +165,7 @@ body{
   border-right:1px solid var(--border);
   display:flex;flex-direction:column;
   overflow:hidden;
+  transition:width .25s ease, min-width .25s ease, transform .25s ease, opacity .2s ease, border-right-width .25s ease;
 }
 .sidebar-head{
   padding:12px;
@@ -188,6 +221,64 @@ body{
 #main{
   flex:1;display:flex;flex-direction:column;overflow:hidden;
   position:relative;
+}
+
+/* Cookie consent banner */
+#cookie-banner{
+  position:fixed;
+  left:16px;
+  right:16px;
+  bottom:16px;
+  z-index:1000;
+  display:none;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:16px 18px;
+  background:var(--bg-panel);
+  border:1px solid var(--border);
+  border-radius:16px;
+  box-shadow:0 18px 40px rgba(0,0,0,.35);
+}
+#cookie-banner p{
+  margin:0;
+  font-weight:700;
+  color:var(--text);
+}
+#cookie-banner .subtext{
+  margin-top:4px;
+  color:var(--text-m);
+  font-size:12px;
+}
+#cookie-banner .actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+#cookie-banner button{
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px 14px;
+  font:inherit;
+  font-weight:700;
+  cursor:pointer;
+}
+#cookie-accept{background:var(--accent);color:#fff;border-color:var(--accent);}
+#cookie-decline{background:var(--bg-input);color:var(--text);}
+@media (max-width:640px){
+  body.cookie-banner-visible #main{
+    padding-bottom:152px;
+  }
+  #cookie-banner{
+    flex-direction:column;
+    align-items:stretch;
+  }
+  #cookie-banner .actions{
+    width:100%;
+  }
+  #cookie-banner .actions button{
+    flex:1;
+  }
 }
 
 /* System prompt panel */
@@ -630,7 +721,18 @@ body{
 <body>
 
 <!-- ── Top bar ─────────────────────────────────────────── -->
+<div id="cookie-banner" role="dialog" aria-live="polite" aria-label="Cookie consent banner">
+  <div>
+    <p>This Website Uses Cookies</p>
+    <div class="subtext">Choose one option. Declining keeps memories stored locally without cookies.</div>
+  </div>
+  <div class="actions">
+    <button id="cookie-accept" type="button">Accept Cookies</button>
+    <button id="cookie-decline" type="button">Decline Cookies</button>
+  </div>
+</div>
 <div id="top-bar">
+  <button id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button>
   <div class="brand">⚡ <span>PMCAI</span></div>
   <div class="top-divider"></div>
   <span class="top-label">Model</span>
@@ -737,6 +839,8 @@ const CHAT_API = 'https://pmcai-backend.onrender.com/api/chat';
 const CHAT_STORAGE_KEY = 'pmcai.chats';
 const SETTINGS_STORAGE_KEY = 'pmcai.settings';
 const PMCAI_SYSTEM_NAME = 'PMCAI Cloud';
+const CONSENT_COOKIE_NAME = 'pmcai_consent';
+const MEMORY_KEY = 'pmcai.memory_mode';
 
 // ── State ────────────────────────────────────────────────
 let allChats      = [];
@@ -750,6 +854,7 @@ let attachImgMime = null;
 let attachPdfText = null;
 let attachPdfName = null;
 let globalSystemPrompt = '';
+let cookieBannerVisible = false;
 
 // ── Persistence ──────────────────────────────────────────
 async function loadChats() {
@@ -765,6 +870,45 @@ function saveChats() {
   saveTimer = setTimeout(() => {
     try { localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(allChats)); } catch {}
   }, 200);
+}
+
+function getCookie(name) {
+  return document.cookie.split('; ').reduce((found, part) => {
+    if (found) return found;
+    const [key, ...rest] = part.split('=');
+    return key === name ? rest.join('=') : '';
+  }, '');
+}
+function setCookie(name, value, maxAgeSeconds) {
+  document.cookie = `${name}=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
+}
+function clearCookie(name) {
+  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
+function setBannerVisible(visible) {
+  cookieBannerVisible = visible;
+  document.body.classList.toggle('cookie-banner-visible', visible);
+  const banner = document.getElementById('cookie-banner');
+  if (banner) banner.style.display = visible ? 'flex' : 'none';
+}
+function acceptCookies() {
+  setCookie(CONSENT_COOKIE_NAME, 'accepted', 60 * 60 * 24 * 365);
+  localStorage.removeItem(MEMORY_KEY);
+  setBannerVisible(false);
+}
+function declineCookies() {
+  clearCookie(CONSENT_COOKIE_NAME);
+  localStorage.setItem(MEMORY_KEY, 'declined');
+  setBannerVisible(false);
+}
+function initCookieConsent() {
+  const accepted = getCookie(CONSENT_COOKIE_NAME) === 'accepted';
+  const declined = localStorage.getItem(MEMORY_KEY) === 'declined';
+  if (accepted || declined) {
+    setBannerVisible(false);
+    return;
+  }
+  setBannerVisible(true);
 }
 
 // ── Chat list ─────────────────────────────────────────────
@@ -1207,9 +1351,18 @@ async function sendMessage() {
 }
 function stopGen() { if (abortCtrl) abortCtrl.abort(); }
 
+const cookieAcceptBtn = document.getElementById('cookie-accept');
+const cookieDeclineBtn = document.getElementById('cookie-decline');
+if (cookieAcceptBtn) cookieAcceptBtn.addEventListener('click', acceptCookies);
+if (cookieDeclineBtn) cookieDeclineBtn.addEventListener('click', declineCookies);
+const sidebarToggleBtn = document.getElementById('sidebar-toggle');
+if (sidebarToggleBtn) sidebarToggleBtn.addEventListener('click', () => {
+  document.body.classList.toggle('sidebar-collapsed');
+});
 
 // Init
 (async () => {
+  initCookieConsent();
   document.title = 'PMCAI - Fast Chat';
   const brand = document.querySelector('#top-bar .brand span');
   if (brand) brand.textContent = 'PMCAI';
