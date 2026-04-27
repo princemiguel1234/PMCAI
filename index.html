@@ -752,8 +752,8 @@ button{border:none}
   </div>
 </div>
 <div id="top-bar">
-  <button id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button>
-  <div class="brand">OFFICAL <span>PMCAI</span></div>
+  <button id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">&#9776;</button>
+  <div class="brand">OFFICIAL <span>PMCAI</span></div>
   <div class="top-divider"></div>
   <span class="top-label">Model</span>
   <select id="model-select"><option>PMCAI</option></select>
@@ -783,7 +783,7 @@ button{border:none}
   <div id="main">
     <div id="sys-panel">
       <div class="sys-row">
-        <label for="sys-ta">System Prompt You Cant Change The Name Of PMCAI</label>
+        <label for="sys-ta">System Prompt. PMCAI keeps its name.</label>
         <textarea id="sys-ta" placeholder="Set instructions for this chat"></textarea>
       </div>
       <div id="sys-actions">
@@ -828,14 +828,18 @@ button{border:none}
 </div>
 <script>
 'use strict';
-const API_BASE_URL = 'https://pmcai-backend.onrender.com';
-const CHAT_API = `${API_BASE_URL}/api/chat`;
+const REMOTE_API_BASE_URL = 'https://pmcai-backend.onrender.com';
+const CHAT_API_PATH = '/api/chat';
+const HEALTH_API_PATH = '/api/health';
+const CONFIG_API_PATH = '/api/config';
 const API_STATUS_INTERVAL_MS = 15 * 60 * 1000;
 const CHAT_STORAGE_KEY = 'pmcai.chats';
 const SETTINGS_STORAGE_KEY = 'pmcai.settings';
 const PMCAI_SYSTEM_NAME = 'PMCAI';
 const CONSENT_COOKIE_NAME = 'pmcai_consent';
+const CONSENT_STORAGE_KEY = 'pmcai_consent_state';
 const MEMORY_KEY = 'pmcai.memory_mode';
+const SIDEBAR_STATE_KEY = 'pmcai.sidebar_collapsed';
 let allChats = [];
 let activeChatId = null;
 let isGenerating = false;
@@ -851,10 +855,83 @@ let globalSystemPrompt = '';
 let pdfJsLoading = false;
 let cookieBannerVisible = false;
 let apiStatusTimer = null;
+let activeApiBase = '';
+function normalizeApiBase(base) {
+  return String(base || '').replace(/\/+$/, '');
+}
+function getPreferredApiBases() {
+  const candidates = [];
+  if (typeof window.PMCAI_API_BASE_URL === 'string' && window.PMCAI_API_BASE_URL.trim()) {
+    candidates.push(normalizeApiBase(window.PMCAI_API_BASE_URL));
+  }
+  if (window.location.protocol.startsWith('http')) {
+    candidates.push(normalizeApiBase(window.location.origin));
+  }
+  candidates.push(REMOTE_API_BASE_URL);
+  return [...new Set(candidates.filter(Boolean))];
+}
+function buildApiUrl(base, path) {
+  return `${normalizeApiBase(base)}${path}`;
+}
+async function fetchWithApiFallback(path, options = {}) {
+  const bases = activeApiBase
+    ? [activeApiBase, ...getPreferredApiBases().filter(base => base !== activeApiBase)]
+    : getPreferredApiBases();
+  let lastError = null;
+  for (const base of bases) {
+    try {
+      const response = await fetch(buildApiUrl(base, path), options);
+      if (response.ok) {
+        activeApiBase = base;
+        return response;
+      }
+      if (response.status < 500 && response.status !== 404) {
+        activeApiBase = base;
+        return response;
+      }
+      lastError = new Error(`PMCAI API responded with ${response.status} on ${base}`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Unable to reach the PMCAI API');
+}
+function normalizeChatMessage(message) {
+  const role = message?.role === 'assistant' ? 'assistant' : 'user';
+  const content = typeof message?.content === 'string' ? message.content : '';
+  const displayContent = typeof message?.displayContent === 'string' ? message.displayContent : '';
+  return {
+    role,
+    content,
+    displayContent,
+    _imgB64: typeof message?._imgB64 === 'string' ? message._imgB64 : null,
+    _imgMime: typeof message?._imgMime === 'string' ? message._imgMime : null,
+    meta: message?.meta && typeof message.meta === 'object' ? message.meta : null
+  };
+}
+function buildHistoryPayload(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .slice(-12)
+    .map(message => ({
+      role: message?.role === 'assistant' ? 'assistant' : 'user',
+      content: typeof message?.content === 'string' && message.content.trim()
+        ? message.content
+        : (typeof message?.displayContent === 'string' ? message.displayContent : '')
+    }))
+    .filter(message => message.content);
+}
 async function loadChats() {
   try {
-    allChats = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || '[]');
-    if (!Array.isArray(allChats)) allChats = [];
+    const stored = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || '[]');
+    allChats = Array.isArray(stored)
+      ? stored.map((chat, index) => ({
+          id: String(chat?.id || `${Date.now()}-${index}`),
+          title: typeof chat?.title === 'string' && chat.title.trim() ? chat.title : 'New Chat',
+          model: typeof chat?.model === 'string' && chat.model.trim() ? chat.model : PMCAI_SYSTEM_NAME,
+          systemPrompt: typeof chat?.systemPrompt === 'string' ? chat.systemPrompt : '',
+          messages: Array.isArray(chat?.messages) ? chat.messages.map(normalizeChatMessage) : []
+        }))
+      : [];
   } catch {
     allChats = [];
   }
@@ -888,17 +965,23 @@ function setBannerVisible(visible) {
 }
 function acceptCookies() {
   setCookie(CONSENT_COOKIE_NAME, 'accepted', 60 * 60 * 24 * 365);
+  localStorage.setItem(CONSENT_STORAGE_KEY, 'accepted');
   localStorage.removeItem(MEMORY_KEY);
   setBannerVisible(false);
 }
 function declineCookies() {
   clearCookie(CONSENT_COOKIE_NAME);
+  localStorage.removeItem(CONSENT_STORAGE_KEY);
   localStorage.setItem(MEMORY_KEY, 'declined');
   setBannerVisible(false);
 }
 function initCookieConsent() {
-  const accepted = getCookie(CONSENT_COOKIE_NAME) === 'accepted';
+  const accepted = getCookie(CONSENT_COOKIE_NAME) === 'accepted'
+    || localStorage.getItem(CONSENT_STORAGE_KEY) === 'accepted';
   const declined = localStorage.getItem(MEMORY_KEY) === 'declined';
+  if (accepted && getCookie(CONSENT_COOKIE_NAME) !== 'accepted') {
+    setCookie(CONSENT_COOKIE_NAME, 'accepted', 60 * 60 * 24 * 365);
+  }
   setBannerVisible(!(accepted || declined));
 }
 function newChat() {
@@ -920,6 +1003,25 @@ function getChat(id) {
 function getActive() {
   return getChat(activeChatId);
 }
+function saveActiveChatPrompt() {
+  const chat = getActive();
+  if (!chat) return;
+  chat.systemPrompt = document.getElementById('sys-ta').value;
+  saveChats();
+}
+function applySidebarState(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  try {
+    localStorage.setItem(SIDEBAR_STATE_KEY, collapsed ? '1' : '0');
+  } catch {}
+}
+function loadSidebarState() {
+  try {
+    applySidebarState(localStorage.getItem(SIDEBAR_STATE_KEY) === '1');
+  } catch {
+    applySidebarState(false);
+  }
+}
 function renderList() {
   const list = document.getElementById('chat-list');
   if (!allChats.length) {
@@ -938,6 +1040,8 @@ function switchChat(id) {
   activeChatId = id;
   const chat = getChat(id);
   if (!chat) return;
+  clearImage();
+  clearPdf();
   document.getElementById('sys-ta').value = chat.systemPrompt || '';
   const box = document.getElementById('chat-box');
   box.innerHTML = '';
@@ -946,7 +1050,7 @@ function switchChat(id) {
   } else {
     chat.messages.forEach(message => {
       const bubbleText = message.role === 'assistant'
-        ? (message.displayContent || sanitizeAssistantText(message.content))
+        ? (message.displayContent || withSourceLinks(message.content, message.meta))
         : (message.displayContent || message.content);
       appendBubble(bubbleText, message.role === 'user' ? 'user' : 'ai', message._imgB64, message._imgMime);
     });
@@ -971,6 +1075,7 @@ function deleteChat(id) {
     if (allChats.length) {
       switchChat(allChats[0].id);
     } else {
+      document.getElementById('sys-ta').value = globalSystemPrompt || '';
       document.getElementById('chat-box').innerHTML = '';
       showWelcome();
       renderList();
@@ -1031,15 +1136,29 @@ function setupMarked() {
   };
   marked.setOptions({ gfm: true, breaks: true, renderer });
 }
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 function renderMd(text) {
-  if (typeof marked === 'undefined') return esc(text).replace(/\n/g, '<br>');
-  return marked.parse(text, { breaks: true });
+  const safeSource = escapeHtml(text);
+  if (typeof marked === 'undefined') return safeSource.replace(/\n/g, '<br>');
+  return marked.parse(safeSource, { breaks: true });
 }
 function sanitizeAssistantText(text) {
   return (text || '')
     .replace(/^\s*USE_WEB:\s*(true|false)\s*$/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+function withSourceLinks(text, meta) {
+  const safeText = sanitizeAssistantText(text);
+  const sources = Array.isArray(meta?.sources) ? meta.sources.filter(source => source?.url) : [];
+  if (!sources.length) return safeText;
+  const sourceLines = sources.map(source => `- [${source.title || source.url}](${source.url})`);
+  return `${safeText}\n\nSources:\n${sourceLines.join('\n')}`;
 }
 function finalizeMsg(element, text) {
   const safeText = sanitizeAssistantText(text);
@@ -1080,7 +1199,19 @@ function esc(value) {
 async function fetchModels() {
   const select = document.getElementById('model-select');
   const active = getActive();
-  const current = active?.model || PMCAI_SYSTEM_NAME;
+  let current = active?.model || PMCAI_SYSTEM_NAME;
+  try {
+    const response = await fetchWithApiFallback(CONFIG_API_PATH, {
+      method: 'GET',
+      cache: 'no-store'
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (typeof data?.aiName === 'string' && data.aiName.trim()) {
+        current = data.aiName.trim();
+      }
+    }
+  } catch {}
   select.innerHTML = '';
   const option = document.createElement('option');
   option.value = current;
@@ -1100,11 +1231,12 @@ async function pingApiStatus() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
   try {
-    await fetch(API_BASE_URL, {
+    const response = await fetchWithApiFallback(HEALTH_API_PATH, {
       method: 'GET',
       cache: 'no-store',
       signal: controller.signal
     });
+    if (!response.ok) throw new Error('PMCAI API offline');
     setApiStatus(true);
     return true;
   } catch {
@@ -1269,6 +1401,8 @@ function clearPdf() {
   attachPdfText = null;
   attachPdfName = null;
   document.getElementById('pdf-preview').classList.remove('show');
+  document.getElementById('pdf-name').textContent = 'document.pdf';
+  document.getElementById('pdf-pages').textContent = 'Reading...';
 }
 const mainEl = document.getElementById('main');
 mainEl.addEventListener('dragover', event => {
@@ -1285,6 +1419,7 @@ mainEl.addEventListener('drop', event => {
   if (file) handleAttach(file);
 });
 const msgInput = document.getElementById('msg-input');
+const sysPromptInput = document.getElementById('sys-ta');
 function resizeMessageInput() {
   const isPhoneWidth = window.innerWidth <= 480;
   const maxHeight = isPhoneWidth ? Math.min(window.innerHeight * 0.34, 260) : 150;
@@ -1311,6 +1446,9 @@ msgInput.addEventListener('keydown', event => {
     sendMessage();
   }
 });
+if (sysPromptInput) {
+  sysPromptInput.addEventListener('input', saveActiveChatPrompt);
+}
 async function sendMessage() {
   const text = msgInput.value.trim();
   if ((!text && !attachImgB64 && !attachPdfText) || isGenerating) return;
@@ -1331,7 +1469,7 @@ async function sendMessage() {
     const snippet = pdfTextSnapshot.length > maxLength
       ? pdfTextSnapshot.slice(0, maxLength) + '\n\n[truncated...]'
       : pdfTextSnapshot;
-    finalText = `PDF attached: "${pdfNameSnapshot}"\n\n${snippet}\n\n---\nUser: ${text}`;
+    finalText = `PDF attached: "${pdfNameSnapshot}"\n\n${snippet}\n\n---\nUser: ${text || 'Please help with this PDF.'}`;
   }
   const displayText = text || (imageB64Snapshot ? 'Analyze this image.' : 'Analyze this attachment.');
   const userMsg = { role: 'user', content: finalText || displayText, displayContent: displayText };
@@ -1353,9 +1491,11 @@ async function sendMessage() {
   msgInput.value = '';
   resizeMessageInput();
   if (chat.title === 'New Chat') {
-    chat.title = text.substring(0, 50) + (text.length > 50 ? '...' : '');
+    const titleSeed = text || (pdfNameSnapshot ? `PDF: ${pdfNameSnapshot}` : (imageFileSnapshot?.name || displayText));
+    chat.title = titleSeed.substring(0, 50) + (titleSeed.length > 50 ? '...' : '');
     renderList();
   }
+  saveChats();
   document.getElementById('model-select').style.display = 'none';
   const modelLocked = document.getElementById('model-locked');
   modelLocked.style.display = 'inline-flex';
@@ -1379,29 +1519,31 @@ async function sendMessage() {
   document.getElementById('stop-btn').style.display = 'block';
   abortCtrl = new AbortController();
   let fullResponse = '';
+  const historyPayload = buildHistoryPayload(chat.messages.slice(0, -1));
   try {
     let response;
     if (imageFileSnapshot) {
       const formData = new FormData();
       formData.append('message', text || 'What is in this image?');
       formData.append('image', imageFileSnapshot, imageFileSnapshot.name || 'upload-image');
-      response = await fetch(CHAT_API, {
+      formData.append('conversationId', chat.id);
+      formData.append('systemPrompt', systemPrompt);
+      formData.append('history', JSON.stringify(historyPayload));
+      response = await fetchWithApiFallback(CHAT_API_PATH, {
         method: 'POST',
         body: formData,
         signal: abortCtrl.signal
       });
     } else {
-      const historyLines = [];
-      if (systemPrompt) historyLines.push('System: ' + systemPrompt);
-      chat.messages.forEach(message => {
-        const label = message.role === 'assistant' ? 'Assistant' : 'User';
-        historyLines.push(label + ': ' + message.content);
-      });
-      const apiPrompt = historyLines.join('\n\n');
-      response = await fetch(CHAT_API, {
+      response = await fetchWithApiFallback(CHAT_API_PATH, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: apiPrompt }),
+        body: JSON.stringify({
+          message: finalText || displayText,
+          conversationId: chat.id,
+          systemPrompt,
+          history: historyPayload
+        }),
         signal: abortCtrl.signal
       });
     }
@@ -1411,9 +1553,14 @@ async function sendMessage() {
     setApiStatus(true);
     fullResponse = typeof data.reply === 'string' ? data.reply : '';
     if (!fullResponse) throw new Error('Empty reply from PMCAI API');
-    const visibleResponse = sanitizeAssistantText(fullResponse);
+    const visibleResponse = withSourceLinks(fullResponse, data.meta);
     finalizeMsg(aiBubble, visibleResponse);
-    chat.messages.push({ role: 'assistant', content: visibleResponse, displayContent: visibleResponse });
+    chat.messages.push({
+      role: 'assistant',
+      content: fullResponse,
+      displayContent: visibleResponse,
+      meta: data.meta || null
+    });
     saveChats();
   } catch (error) {
     overlay.classList.remove('active');
@@ -1448,12 +1595,13 @@ if (cookieDeclineBtn) cookieDeclineBtn.addEventListener('click', declineCookies)
 const sidebarToggleBtn = document.getElementById('sidebar-toggle');
 if (sidebarToggleBtn) {
   sidebarToggleBtn.addEventListener('click', () => {
-    document.body.classList.toggle('sidebar-collapsed');
+    applySidebarState(!document.body.classList.contains('sidebar-collapsed'));
   });
 }
 (async () => {
   initCookieConsent();
   setupMarked();
+  loadSidebarState();
   startApiStatusPolling();
   await loadGlobalPrompt();
   await loadChats();
