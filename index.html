@@ -824,8 +824,8 @@ button{border:none}
         <button class="remove-btn" onclick="clearPdf()" title="Remove attachment">x</button>
       </div>
       <div id="vision-warn">
-        <span>Warning:</span>
-        <span><strong id="warn-model"></strong> uses a text API endpoint. Image previews stay in chat, but only typed text and extracted PDF text are sent.</span>
+        <span>Vision:</span>
+        <span><strong id="warn-model"></strong> will upload this image to the PMCAI backend for Groq vision analysis.</span>
       </div>
       <div class="input-row">
         <button id="attach-btn" title="Attach image or PDF" onclick="document.getElementById('attach-file').click()">+</button>
@@ -855,6 +855,7 @@ let saveTimer = null;
 let resizeRaf = null;
 let attachImgB64 = null;
 let attachImgMime = null;
+let attachImgFile = null;
 let attachPdfText = null;
 let attachPdfName = null;
 let globalSystemPrompt = '';
@@ -1204,6 +1205,7 @@ function handleAttach(file) {
 }
 function handleImg(file) {
   clearPdf();
+  attachImgFile = file;
   const reader = new FileReader();
   reader.onload = event => {
     const dataUrl = event.target.result;
@@ -1219,6 +1221,7 @@ function handleImg(file) {
 function clearImage() {
   attachImgB64 = null;
   attachImgMime = null;
+  attachImgFile = null;
   document.getElementById('img-preview').classList.remove('show');
   document.getElementById('img-thumb').src = '';
   document.getElementById('vision-warn').classList.remove('show');
@@ -1331,33 +1334,39 @@ msgInput.addEventListener('keydown', event => {
 });
 async function sendMessage() {
   const text = msgInput.value.trim();
-  if (!text || isGenerating) return;
+  if ((!text && !attachImgB64 && !attachPdfText) || isGenerating) return;
   if (!activeChatId || !getActive()) newChat();
   const chat = getActive();
   const model = PMCAI_SYSTEM_NAME;
   const systemPrompt = document.getElementById('sys-ta').value.trim();
   chat.model = model;
   chat.systemPrompt = systemPrompt;
+  const imageB64Snapshot = attachImgB64;
+  const imageMimeSnapshot = attachImgMime;
+  const imageFileSnapshot = attachImgFile;
+  const pdfTextSnapshot = attachPdfText;
+  const pdfNameSnapshot = attachPdfName;
   let finalText = text;
-  if (attachPdfText) {
+  if (pdfTextSnapshot) {
     const maxLength = 12000;
-    const snippet = attachPdfText.length > maxLength
-      ? attachPdfText.slice(0, maxLength) + '\n\n[truncated...]'
-      : attachPdfText;
-    finalText = `PDF attached: "${attachPdfName}"\n\n${snippet}\n\n---\nUser: ${text}`;
+    const snippet = pdfTextSnapshot.length > maxLength
+      ? pdfTextSnapshot.slice(0, maxLength) + '\n\n[truncated...]'
+      : pdfTextSnapshot;
+    finalText = `PDF attached: "${pdfNameSnapshot}"\n\n${snippet}\n\n---\nUser: ${text}`;
   }
-  const userMsg = { role: 'user', content: finalText, displayContent: text };
-  if (attachImgB64) {
-    userMsg.images = [attachImgB64];
-    userMsg._imgB64 = attachImgB64;
-    userMsg._imgMime = attachImgMime;
+  const displayText = text || (imageB64Snapshot ? 'Analyze this image.' : 'Analyze this attachment.');
+  const userMsg = { role: 'user', content: finalText || displayText, displayContent: displayText };
+  if (imageB64Snapshot) {
+    userMsg.images = [imageB64Snapshot];
+    userMsg._imgB64 = imageB64Snapshot;
+    userMsg._imgMime = imageMimeSnapshot;
   }
   chat.messages.push(userMsg);
-  const userBubble = appendBubble(text, 'user', attachImgB64, attachImgMime);
-  if (attachPdfText) {
+  const userBubble = appendBubble(displayText, 'user', imageB64Snapshot, imageMimeSnapshot);
+  if (pdfTextSnapshot) {
     const badge = document.createElement('span');
     badge.style.cssText = 'display:block;font-size:11px;opacity:.6;margin-top:6px;';
-    badge.textContent = 'PDF: ' + attachPdfName;
+    badge.textContent = 'PDF: ' + pdfNameSnapshot;
     userBubble.appendChild(badge);
   }
   clearImage();
@@ -1372,16 +1381,6 @@ async function sendMessage() {
   const modelLocked = document.getElementById('model-locked');
   modelLocked.style.display = 'inline-flex';
   modelLocked.textContent = model;
-  const historyLines = [];
-  if (systemPrompt) historyLines.push('System: ' + systemPrompt);
-  chat.messages.forEach(message => {
-    const label = message.role === 'assistant' ? 'Assistant' : 'User';
-    historyLines.push(label + ': ' + message.content);
-    if (message.images && message.images.length) {
-      historyLines.push('[Image attachment previewed in UI but not sent to API]');
-    }
-  });
-  const apiPrompt = historyLines.join('\n\n');
   const overlay = document.getElementById('load-overlay');
   if (chat.messages.length === 1) {
     overlay.classList.add('active');
@@ -1402,12 +1401,31 @@ async function sendMessage() {
   abortCtrl = new AbortController();
   let fullResponse = '';
   try {
-    const response = await fetch(CHAT_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: apiPrompt }),
-      signal: abortCtrl.signal
-    });
+    let response;
+    if (imageFileSnapshot) {
+      const formData = new FormData();
+      formData.append('message', text || 'What is in this image?');
+      formData.append('image', imageFileSnapshot, imageFileSnapshot.name || 'upload-image');
+      response = await fetch(CHAT_API, {
+        method: 'POST',
+        body: formData,
+        signal: abortCtrl.signal
+      });
+    } else {
+      const historyLines = [];
+      if (systemPrompt) historyLines.push('System: ' + systemPrompt);
+      chat.messages.forEach(message => {
+        const label = message.role === 'assistant' ? 'Assistant' : 'User';
+        historyLines.push(label + ': ' + message.content);
+      });
+      const apiPrompt = historyLines.join('\n\n');
+      response = await fetch(CHAT_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: apiPrompt }),
+        signal: abortCtrl.signal
+      });
+    }
     if (!response.ok) throw new Error('PMCAI API error ' + response.status);
     const data = await response.json();
     overlay.classList.remove('active');
