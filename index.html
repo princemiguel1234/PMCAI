@@ -591,7 +591,7 @@ button{border:none}
   border-top:1px solid var(--border);
   background:var(--bg-panel-strong);
 }
-#img-preview,#pdf-preview,#vision-warn{
+#img-preview,#pdf-preview{
   display:none;
   align-items:center;
   gap:10px;
@@ -614,13 +614,6 @@ button{border:none}
 #pdf-icon{font-size:20px}
 #pdf-info strong{display:block;font-size:12px}
 #pdf-pages{font-size:11px;color:var(--text-muted)}
-#vision-warn{
-  background:rgba(255,180,84,0.08);
-  border:1px solid rgba(255,180,84,0.24);
-  color:var(--warn);
-  font-size:12px;
-}
-#vision-warn.show{display:flex}
 .remove-btn{
   margin-left:auto;
   background:none;
@@ -822,10 +815,6 @@ button{border:none}
           <span id="pdf-pages">Reading...</span>
         </div>
         <button class="remove-btn" onclick="clearPdf()" title="Remove attachment">x</button>
-      </div>
-      <div id="vision-warn">
-        <span>Vision:</span>
-        <span><strong id="warn-model"></strong> will upload this image to the PMCAI backend for Groq vision analysis.</span>
       </div>
       <div class="input-row">
         <button id="attach-btn" title="Attach image or PDF" onclick="document.getElementById('attach-file').click()">+</button>
@@ -1214,7 +1203,6 @@ function handleImg(file) {
     document.getElementById('img-thumb').src = dataUrl;
     document.getElementById('img-name').textContent = file.name;
     document.getElementById('img-preview').classList.add('show');
-    checkVisionWarn();
   };
   reader.readAsDataURL(file);
 }
@@ -1224,15 +1212,6 @@ function clearImage() {
   attachImgFile = null;
   document.getElementById('img-preview').classList.remove('show');
   document.getElementById('img-thumb').src = '';
-  document.getElementById('vision-warn').classList.remove('show');
-}
-function checkVisionWarn() {
-  if (!attachImgB64) {
-    document.getElementById('vision-warn').classList.remove('show');
-    return;
-  }
-  document.getElementById('warn-model').textContent = PMCAI_SYSTEM_NAME;
-  document.getElementById('vision-warn').classList.add('show');
 }
 async function ensurePdfJs() {
   if (window.pdfjsLib) return true;
