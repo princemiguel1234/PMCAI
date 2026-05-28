@@ -157,7 +157,60 @@ button{border:none}
   font-size:12px;
   font-weight:600;
   max-width:220px;
+  /* ensure native dropdown arrow is visible and selectable */
+  appearance: auto;
+  -webkit-appearance: menulist;
+  cursor: pointer;
 }
+
+/* Custom model chooser */
+#model-select-btn{
+  min-height:40px;
+  padding:0 14px;
+  font-size:12px;
+  font-weight:600;
+  border:1px solid var(--border);
+  border-radius:999px;
+  background:var(--bg-soft);
+  color:var(--text);
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+#model-select-btn:focus{outline:none}
+#model-select-btn:active{transform:translateY(0)}
+#model-dropdown{
+  position:fixed;
+  margin-top:6px;
+  min-width:160px;
+  max-width:420px;
+  border-radius:12px;
+  overflow:hidden;
+  background:var(--bg-panel-strong);
+  border:1px solid var(--border);
+  box-shadow:0 28px 84px rgba(0,0,0,0.72);
+  transform-origin:top left;
+  transform:scaleY(0);
+  transition:transform 180ms cubic-bezier(.2,.8,.2,1),opacity 180ms;
+  opacity:0;
+  z-index:99999;
+  pointer-events:auto;
+}
+#model-dropdown.open{transform:scaleY(1);opacity:1}
+.model-option{
+  display:block;
+  width:100%;
+  padding:10px 12px;
+  text-align:left;
+  background:transparent;
+  border:0;
+  color:var(--text);
+  font-weight:600;
+  cursor:pointer;
+}
+.model-option:hover{background:rgba(255,255,255,0.03)}
+.model-option.selected{color:var(--accent-soft);background:linear-gradient(90deg, rgba(255,122,89,0.06), rgba(180,140,255,0.04));}
 #model-locked{
   display:none;
   align-items:center;
@@ -895,11 +948,15 @@ body.voice-recording #send-btn.voice-mode{
   <div class="brand">OFFICIAL <span>PMCAI</span></div>
   <div class="top-divider"></div>
   <span class="top-label">Model</span>
-  <select id="model-select"></select>
+  <div style="position:relative;display:inline-block;">
+    <button id="model-select-btn" type="button" aria-haspopup="true" aria-expanded="false">PMCAI 1 ▾</button>
+    <div id="model-dropdown" role="menu" aria-hidden="true"></div>
+    <select id="model-select" style="display:none"></select>
+  </div>
   <span id="model-locked"></span>
   <div class="top-divider"></div>
   <span class="top-label">Temp</span>
-  <input type="number" id="temp-input" value="0.2" min="0.2" max="0.2" step="0.1" readonly>
+  <input type="number" id="temp-input" value="0.2" min="0" max="1" step="0.1" readonly>
   <div class="top-divider"></div>
   <button id="sys-prompt-btn" onclick="toggleSysPanel()">System Prompt<span id="sys-global-dot"></span></button>
 </div>
@@ -999,6 +1056,11 @@ const SETTINGS_STORAGE_KEY = 'pmcai.settings';
 const PMCAI_SYSTEM_NAME = 'PMCAI';
 const PMCAI_MODEL_OPTIONS = ['PMCAI 0', 'PMCAI 1', 'PMCAI 2'];
 const PMCAI_DEFAULT_MODEL = 'PMCAI 1';
+const PMCAI_MODEL_TEMPERATURE = {
+  'PMCAI 0': 0.6,
+  'PMCAI 1': 0.7,
+  'PMCAI 2': 0.8
+};
 const CONSENT_COOKIE_NAME = 'pmcai_consent';
 const CONSENT_STORAGE_KEY = 'pmcai_consent_state';
 const MEMORY_KEY = 'pmcai.memory_mode';
@@ -1282,16 +1344,12 @@ function switchChat(id) {
     });
   }
   const modelSelect = document.getElementById('model-select');
+  const modelSelectBtn = document.getElementById('model-select-btn');
   const modelLocked = document.getElementById('model-locked');
-  if (chat.messages.length && chat.model) {
-    modelSelect.style.display = 'none';
-    modelLocked.style.display = 'inline-flex';
-    modelLocked.textContent = chat.model;
-  } else {
-    modelSelect.style.display = '';
-    modelLocked.style.display = 'none';
-    modelSelect.value = normalizeModelName(chat.model);
-  }
+  // Always allow changing model; update UI to reflect current chat model
+  if (modelSelect) modelSelect.value = normalizeModelName(chat.model);
+  if (modelSelectBtn) updateModelDisplay(normalizeModelName(chat.model || PMCAI_DEFAULT_MODEL));
+  if (modelLocked) modelLocked.style.display = 'none';
   renderList();
 }
 function deleteChat(id) {
@@ -1635,6 +1693,108 @@ async function fetchModels() {
     select.appendChild(option);
   });
   select.disabled = false;
+  // populate custom dropdown panel and sync button display (only once)
+  const dropdown = document.getElementById('model-dropdown');
+  const btn = document.getElementById('model-select-btn');
+  if (dropdown && !dropdown.dataset.initialized) {
+    dropdown.innerHTML = '';
+    PMCAI_MODEL_OPTIONS.forEach(name => {
+      const opt = document.createElement('button');
+      opt.type = 'button';
+      opt.className = 'model-option';
+      opt.textContent = name;
+      opt.dataset.value = name;
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // mark selected visually
+        dropdown.querySelectorAll('.model-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        select.value = name;
+        updateModelDisplay(name);
+        const chat = getActive();
+        if (chat) {
+          chat.model = normalizeModelName(name);
+          saveChats();
+        }
+        closeModelDropdown();
+      });
+      dropdown.appendChild(opt);
+    });
+    // move dropdown to body to avoid stacking/context clipping
+    try {
+      document.body.appendChild(dropdown);
+    } catch {}
+    dropdown.dataset.initialized = '1';
+  }
+  if (btn) updateModelDisplay(current);
+  // mark selected option in dropdown if present
+  if (dropdown) {
+    dropdown.querySelectorAll('.model-option').forEach(o => o.classList.toggle('selected', o.dataset.value === current));
+  }
+}
+
+function updateModelDisplay(name) {
+  const btn = document.getElementById('model-select-btn');
+  const select = document.getElementById('model-select');
+  const value = normalizeModelName(name || PMCAI_DEFAULT_MODEL);
+  if (select) select.value = value;
+  if (btn) btn.textContent = `${value} ▾`;
+  // update temperature input to match selected model
+  const tempEl = document.getElementById('temp-input');
+  if (tempEl) {
+    const t = PMCAI_MODEL_TEMPERATURE[value];
+    if (typeof t === 'number') tempEl.value = String(t);
+  }
+  // update selected marker in dropdown options
+  const dropdown = document.getElementById('model-dropdown');
+  if (dropdown) {
+    dropdown.querySelectorAll('.model-option').forEach(o => o.classList.toggle('selected', o.dataset.value === value));
+  }
+}
+
+function toggleModelDropdown() {
+  const dd = document.getElementById('model-dropdown');
+  const btn = document.getElementById('model-select-btn');
+  if (!dd || !btn) return;
+  const open = !dd.classList.contains('open');
+  if (open) {
+    // position near the button using fixed coordinates to avoid clipping by overflow
+    const rect = btn.getBoundingClientRect();
+    const left = Math.max(8, rect.left);
+    dd.style.left = `${left}px`;
+    dd.style.top = `${rect.bottom + 8}px`;
+    dd.style.minWidth = `${Math.max(rect.width, 160)}px`;
+    // clamp to viewport right edge
+    requestAnimationFrame(() => {
+      const overflowRight = (dd.getBoundingClientRect().right - window.innerWidth) + 8;
+      if (overflowRight > 0) dd.style.left = `${Math.max(8, left - overflowRight)}px`;
+    });
+    dd.classList.add('open');
+    dd.setAttribute('aria-hidden', 'false');
+    btn.setAttribute('aria-expanded', 'true');
+    try { btn.focus(); } catch {}
+  } else {
+    closeModelDropdown();
+  }
+}
+
+function closeModelDropdown() {
+  const dd = document.getElementById('model-dropdown');
+  const btn = document.getElementById('model-select-btn');
+  if (!dd) return;
+  dd.classList.remove('open');
+  dd.setAttribute('aria-hidden', 'true');
+  if (btn) {
+    btn.setAttribute('aria-expanded', 'false');
+    try { btn.blur(); } catch {};
+    btn.style.color = ''; // clear any accidental inline color
+  }
+}
+
+if (!window.__pmcai_model_listeners) {
+  document.addEventListener('click', closeModelDropdown);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelDropdown(); });
+  window.__pmcai_model_listeners = true;
 }
 function setApiStatus(isOnline) {
   const dot = document.getElementById('status-dot');
@@ -2262,13 +2422,20 @@ if (sidebarToggleBtn) {
     applySidebarState(!document.body.classList.contains('sidebar-collapsed'));
   });
 }
-const modelSelectBtn = document.getElementById('model-select');
-if (modelSelectBtn) {
-  modelSelectBtn.addEventListener('change', () => {
+const hiddenModelSelect = document.getElementById('model-select');
+const modelSelectBtnEl = document.getElementById('model-select-btn');
+if (modelSelectBtnEl) {
+  modelSelectBtnEl.addEventListener('click', (e) => { e.stopPropagation(); toggleModelDropdown(); });
+}
+if (hiddenModelSelect) {
+  hiddenModelSelect.addEventListener('change', () => {
+    const name = hiddenModelSelect.value;
+    updateModelDisplay(name);
     const chat = getActive();
-    if (!chat || chat.messages.length) return;
-    chat.model = normalizeModelName(modelSelectBtn.value);
-    saveChats();
+    if (chat) {
+      chat.model = normalizeModelName(name);
+      saveChats();
+    }
   });
 }
 (async () => {
