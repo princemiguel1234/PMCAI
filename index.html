@@ -2597,7 +2597,9 @@ async function sendMessage() {
     let response;
     if (imageFileSnapshot) {
       const formData = new FormData();
-      formData.append('message', text || 'What is in this image?');
+      const imagePrompt = text || displayText || 'What is in this image?';
+      formData.append('message', imagePrompt);
+      formData.append('imagePrompt', imagePrompt);
       formData.append('image', imageFileSnapshot, imageFileSnapshot.name || 'upload-image');
       formData.append('conversationId', chat.id);
       formData.append('model', model);
